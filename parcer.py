@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, Optional
 import xls_functions
 import asyncio
 import time
@@ -14,6 +14,7 @@ import colorama
 import re
 import os
 from loguru import logger
+from retry import retry
 
 
 def set_work_dir():
@@ -157,7 +158,7 @@ class Parcer(ABC):
         pass
 
     @abstractmethod
-    async def get_product_info(self, product_link: str) -> list[Product] | None:
+    async def get_product_info(self, product_link: str) -> Optional[list[Product]]:
         """
         This method should be implemented in subclasses to parse product details from a product page and return a list of Product dictionaries.
         """
@@ -243,6 +244,10 @@ class Parcer(ABC):
                 self.sh.cell(i, self.unavailable_at_site_times_clmn).value = None
                 self.sh.cell(i, self.present_at_site_clmn).value = None
 
+    @retry(max_tries=worker_attempts)
+    async def get_product_info_advanced(self, product_link: str) -> Optional[list[Product]]:
+        return await self.get_product_info(product_link)
+
     async def worker(self, i: int):
         """
         Worker function that processes product links from the queue, fetches product information, and writes it to the Excel sheet.
@@ -251,30 +256,25 @@ class Parcer(ABC):
         logger.info(f'Worker {i} - Starting parsing links of {self.site}')
         while True:
             product_link = await self.queue.get()
-            for attempt in range(self.worker_attempts):
-                logger.debug(color + f'Worker {i}, attempt {attempt} ---- Getting {product_link}\n')
-                try:
-                    some_products = await self.get_product_info(product_link)
-                    if not some_products:
-                        logger.debug(f'***********  NO PRODUCTS FOUND ON THE PAGE  *********** {product_link}')
-                except Exception as e:
-                    print(color + f'\n\n\n{str(e)}\n\n\n')
-                    await asyncio.sleep(self.worker_timeout)
-                    if attempt == self.worker_attempts - 1:
-                        logger.error(f"Couldn't parce the link {product_link} for {self.worker_attempts} attempts")
-                else:
-                    for product in some_products:
-                        logger.debug(color + f'Worker {i} ---- Writing {product}\n')
-                        row = self.index.get(product[self.compared_product_field].lower().strip())
-                        if row is None:
-                            row = self.sh.max_row + 1
-                            if row < 2:
-                                row = 2
-                        self.write_product_to_xls(row=row, product=product)
-                    break  # Stop attempts on success
+            try:
+                logger.debug(color + f'Worker {i}, ---- Getting {product_link}\n')
+                some_products = await self.get_product_info_advanced(product_link)
+                if not some_products:
+                    logger.debug(f'***********  NO PRODUCTS FOUND ON THE PAGE  *********** {product_link}')
+            except Exception as e:
+                logger.error(f"ERROR {str(e)} parsing product {product_link} for {self.worker_attempts} attempts")
+            else:
+                for product in some_products:
+                    logger.debug(color + f'Worker {i} ---- Writing {product}\n')
+                    row = self.index.get(product[self.compared_product_field].lower().strip())
+                    if row is None:
+                        row = self.sh.max_row + 1
+                        if row < 2:
+                            row = 2
+                    self.write_product_to_xls(row=row, product=product)
 
-            await asyncio.sleep(self.worker_timeout)
             self.queue.task_done()
+            await asyncio.sleep(self.worker_timeout)
 
     async def main(self):
         """
