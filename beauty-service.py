@@ -52,11 +52,13 @@ class Site(Parcer):
         return products_links
 
     async def get_product_info(self, product_link: str) -> list[Product] | None:
+        art = None
         soup = await self.get_soup(product_link)
         name = soup.find("h1", {"itemprop": "name"}).string
         if translate('discount').lower() in name.lower() or translate('discount_2').lower() in name.lower():
             return []
-        art = soup.find("meta", {"itemprop": "sku"})['content']
+        if art_tag := soup.find("meta", {"itemprop": "sku"}):
+            art = art_tag['content']
         available = soup.find("div", {"class": "stock"}).string
         if available == translate('in_stock') or available == translate('in_stock_2'):
             available = '+'
