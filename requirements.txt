@@ -6,3 +6,5 @@ loguru
 xlrd
 pyTelegramBotAPI
 python-dotenv
+lxml_html_clean
+playwright

@@ -9,6 +9,7 @@ def tag_has_sku(tag):
 class Site(Parcer):
     price_file = 'home-club.com.ua.xlsx'
     site = 'https://home-club.com.ua/ua'
+    render_javascript = True
     categories_to_get = [
         'https://home-club.com.ua/ua/kukhonni-ostrivtsi-ta-vizky',
         'https://home-club.com.ua/ua/moduli-na-kolesakh-dlia-vannoi',

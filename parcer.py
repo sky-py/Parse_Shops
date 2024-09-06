@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from httpx import AsyncClient, BasicAuth
+from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -15,6 +16,7 @@ import re
 import os
 from loguru import logger
 from retry import retry
+from messengers import send_service_tg_message
 
 
 def set_work_dir():
@@ -37,7 +39,7 @@ def init_loggers(file_name: str) -> None:
                level='INFO',
                backtrace=True,
                diagnose=True)
-    logger.add(sink=lambda msg: constants.send_message(msg),
+    logger.add(sink=lambda msg: send_service_tg_message(msg),
                format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
                level='ERROR',
                backtrace=True,
@@ -78,7 +80,12 @@ class Parcer(ABC):
     excluded_links = []  # List of product links to exclude from parsing
     excluded_links_parts = []  # List of URL fragments to exclude links containing them
 
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:77.0) Gecko/20100101 Firefox/77.0'}  # User-Agent header for HTTP requests
+    user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+    headers = {'User-Agent': user_agent}
+    extra_http_headers = {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7,ru;q=0.6',
+    }
     proxy_host: str = ''  # "your_proxy_host"
     proxy_port_http: int
     proxy_port_https: int
@@ -99,6 +106,7 @@ class Parcer(ABC):
     unavailable_at_site_times_clmn = 12
 
     # Additional configuration options
+    render_javascript = False  # Enable JavaScript rendering
     use_connection_pool = True  # Reuse existing network connections if True, create new ones otherwise
     use_dalayed_availability = True  # Delay marking products as unavailable until multiple checks
     compared_product_field = 'art'  # Field used to compare and identify products (art or name)
@@ -118,7 +126,14 @@ class Parcer(ABC):
             self.proxies = None
             self.auth = None
 
+        # Set up the httpx async client
         self.client = AsyncClient(follow_redirects=True, proxies=self.proxies, auth=self.auth)
+
+        # Initialize the Playwright browser and context
+        self.playwright = None
+        self.browser = None
+        self.context = None
+
         self.queue = asyncio.Queue()
 
         Path(constants.supl_path).mkdir(parents=True, exist_ok=True)
@@ -140,7 +155,7 @@ class Parcer(ABC):
         self.index = xls_functions.index_file(self.sh, self.compare_by_column_number)
 
         # Set event loop policy for Windows systems
-        if platform.system().lower() == 'windows':
+        if platform.system().lower() == 'windows' and not self.render_javascript:
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     @abstractmethod
@@ -175,10 +190,20 @@ class Parcer(ABC):
             await temp_client.aclose()
         return r.text
 
+    async def get_javascript_page(self, url: str) -> str:
+        page = await self.context.new_page()
+        await page.goto(url, wait_until="networkidle")
+        html = await page.content()
+        await page.close()
+        return html
+
     async def get_soup(self, url: str) -> BeautifulSoup:
         """Fetches the HTML content and parses it into a BeautifulSoup object."""
-        text = await self.get_page(url)
-        return BeautifulSoup(text, features='html.parser')
+        if self.render_javascript:
+            html = await self.get_javascript_page(url)
+        else:
+            html = await self.get_page(url)
+        return BeautifulSoup(html, features='html.parser')
 
     async def get_links_for_processing(self, site: str):
         """
@@ -276,10 +301,27 @@ class Parcer(ABC):
             self.queue.task_done()
             await asyncio.sleep(self.worker_timeout)
 
+
+    async def init_playwright(self):
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.chromium.launch(headless=False)
+        self.context = await self.browser.new_context(user_agent=self.user_agent,
+                                                      extra_http_headers=self.extra_http_headers)
+        page = await self.context.new_page()
+        await page.goto('about:blank')
+
+    async def close_playwright(self):
+        await self.context.close()
+        await self.browser.close()
+        await self.playwright.stop()
+
     async def main(self):
         """
         Main asynchronous function that manages the parsing process, creates workers, and handles the queue.
         """
+        if self.render_javascript:
+            await self.init_playwright()
+
         get_products_links_task = asyncio.create_task(self.get_links_for_processing(site=self.site))
         workers_tasks = [asyncio.create_task(self.worker(i)) for i in range(self.number_of_workers)]
 
@@ -291,6 +333,9 @@ class Parcer(ABC):
             await self.queue.join()
 
         await self.client.aclose()
+
+        if self.render_javascript:
+            await self.close_playwright()
 
     @logger.catch
     def parse(self):
