@@ -1,4 +1,4 @@
-from parcer import Parcer, Product
+from parser import Parser, Product
 
 
 main_lang = 'ua'
@@ -20,7 +20,7 @@ def translate(element):
     return lang[main_lang][element]
 
 
-class Site(Parcer):
+class Site(Parser):
     price_file = 'Ramosu.xlsx'
     site = 'https://ramosu.com.ua/uk/'
     max_products_per_page = '?limit=100'
@@ -59,7 +59,7 @@ class Site(Parcer):
 
         return products_links
 
-    async def get_product_info(self, product_link: str) -> list[Product] | None:
+    async def get_product_info(self, product_link: str) -> list[Product]:
         soup = await self.get_soup(product_link)
         name = soup.find("h1", {"class": "us-main-shop-title"}).string
         art = soup.find("span", {"class": "us-product-info-code"}).string

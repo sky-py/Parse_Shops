@@ -1,8 +1,8 @@
-from parcer import Parcer, Product
+from parser import Parser, Product
 import json
 
 
-class Site(Parcer):
+class Site(Parser):
     price_file = 'sunuv.in.ua.xlsx'
     site = 'https://sunuv.in.ua/'
     compared_product_field = 'name'
@@ -18,14 +18,14 @@ class Site(Parcer):
         return links
 
     async def get_products_links(self, category_link: str) -> list[str]:
-        soup = await self.get_soup(category_link)
+        soup = await self.get_soup(category_link + self.max_products_per_page)
         try:
             products_links = [li.a['href'] for li in soup.select_one(".products.columns-3").find_all('li')]
             return products_links
         except AttributeError:
             return []
 
-    async def get_product_info(self, product_link: str) -> list[Product] | None:
+    async def get_product_info(self, product_link: str) -> list[Product]:
         all_products = []
         soup = await self.get_soup(product_link)
         name = soup.find('h1').text

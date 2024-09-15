@@ -1,4 +1,4 @@
-from parcer import Parcer, Product
+from parser import Parser, Product
 
 main_lang = 'ua'
 lang = {
@@ -25,13 +25,13 @@ def translate(element):
     return lang[main_lang][element]
 
 
-class Site(Parcer):
+class Site(Parser):
     compared_product_field = 'name'
     use_connection_pool = False
     price_file = 'Бьюти-Сервис.xlsx'
     site = 'https://kosmetologia.com.ua/ua'
     max_products_per_page = '?limit=500'
-    excluded_links_parts = ['/seminary-dlya-kosmetologov', '/obuchayshchaya-kniga-vakuumnyi-massazh',]
+    excluded_categories_links_parts = ['/seminary-dlya-kosmetologov', '/obuchayshchaya-kniga-vakuumnyi-massazh',]
     max_unavailable_count = 2
 
     async def get_categories_links(self, link: str) -> list[str]:
@@ -39,19 +39,17 @@ class Site(Parcer):
         soup = await self.get_soup(link)
         for main_cat in soup.find_all("li", {"class": "root root-dropdown"}):
             for li in main_cat.find_all("li"):
-                cat_link = li.a['href']
-                if not self.is_link_excluded_by_part(cat_link):
-                    categories_links.append('https:' + cat_link)
+                categories_links.append('https:' + li.a['href'])
         return categories_links
 
     async def get_products_links(self, category_link: str) -> list[str]:
         products_links = []
-        soup = await self.get_soup(category_link)
+        soup = await self.get_soup(category_link + self.max_products_per_page)
         for product_item in soup.find_all("div", {"class": "product-item"}):
             products_links.append('https:' + product_item.find("div", {"class": "name"}).a['href'])
         return products_links
 
-    async def get_product_info(self, product_link: str) -> list[Product] | None:
+    async def get_product_info(self, product_link: str) -> list[Product]:
         art = None
         soup = await self.get_soup(product_link)
         name = soup.find("h1", {"itemprop": "name"}).string

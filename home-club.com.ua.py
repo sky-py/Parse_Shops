@@ -1,4 +1,4 @@
-from parcer import Parcer, Product
+from parser import Parser, Product
 import re
 
 
@@ -6,10 +6,11 @@ def tag_has_sku(tag):
     return tag.has_attr('id') and 'sku' in tag['id']
 
 
-class Site(Parcer):
+class Site(Parser):
     price_file = 'home-club.com.ua.xlsx'
     site = 'https://home-club.com.ua/ua'
     render_javascript = True
+    headless = False  # clouflare protection
     categories_to_get = [
         'https://home-club.com.ua/ua/kukhonni-ostrivtsi-ta-vizky',
         'https://home-club.com.ua/ua/moduli-na-kolesakh-dlia-vannoi',
@@ -38,7 +39,7 @@ class Site(Parcer):
                 break
         return products_links
 
-    async def get_product_info(self, product_link: str) -> list[Product] | None:
+    async def get_product_info(self, product_link: str) -> list[Product]:
         all_products = []
         soup = await self.get_soup(product_link)
 

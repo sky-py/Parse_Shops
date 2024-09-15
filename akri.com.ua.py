@@ -1,5 +1,5 @@
 import time
-from parcer import Parcer, Product
+from parser import Parser, Product
 import json
 
 
@@ -15,21 +15,21 @@ def get_number_from_content(content: str) -> int | None:
         return None
 
 
-class Site(Parcer):
+class Site(Parser):
     price_file = 'akri.com.ua.xlsx'
     site = 'https://akri.com.ua/ua/'
     number_of_workers = 2
     max_products_per_page = '?limit=500'
     compared_product_field = 'name'
 
-    async def get_categories_links(self, link: str) -> list:
+    async def get_categories_links(self, link: str) -> list[str]:
         soup = await self.get_soup(link)
         links = [li.a['href'].replace('http://', 'https://')
                  for li in soup.find('nav', class_='side-nav').ul.find_all('li', recursive=False)]
         return links
 
-    async def get_products_links(self, category_link: str) -> list:
-        soup = await self.get_soup(category_link)
+    async def get_products_links(self, category_link: str) -> list[str]:
+        soup = await self.get_soup(category_link + self.max_products_per_page)
         try:
             products_links = [a['href'].replace('http://', 'https://')
                               for a in soup.find('div', class_='products').find_all('a')]
@@ -37,7 +37,7 @@ class Site(Parcer):
         except:
             return []
 
-    async def get_product_info(self, product_link: str) -> list[Product] | None:
+    async def get_product_info(self, product_link: str) -> list[Product]:
         all_products = []
         soup = await self.get_soup(product_link)
 

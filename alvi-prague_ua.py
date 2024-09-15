@@ -1,6 +1,6 @@
 import re
-from parcer import Parcer, Product
-import constants
+from parser import Parser, Product
+from messengers import send_service_tg_message
 
 
 main_lang = 'ua'
@@ -22,7 +22,7 @@ def translate(element):
     return lang[main_lang][element]
 
 
-class Site(Parcer):
+class Site(Parser):
     price_file = 'alvi-prague_ua.xlsx'
     site = 'https://alvi-prague.ua/uk'
     max_products_per_page = '?limit=100'
@@ -37,7 +37,7 @@ class Site(Parcer):
     link_clmn = 6
     group_clmn = 7
 
-    async def get_categories_links(self, link: str):
+    async def get_categories_links(self, link: str) -> list[str]:
         categories_links = []
         soup = await self.get_soup(link)
         for main_cat in soup.find_all("a", {"class": "toggle-desktop"}):
@@ -46,14 +46,14 @@ class Site(Parcer):
                 categories_links.append(li.a['href'])
         return categories_links
 
-    async def get_products_links(self, category_link: str):
+    async def get_products_links(self, category_link: str) -> list[str]:
         products_links = []
-        soup = await self.get_soup(category_link)
+        soup = await self.get_soup(category_link + self.max_products_per_page)
         for div in soup.find_all("div", {"class": "name-product-card"}):
             products_links.append(div.a['href'])
         return products_links
 
-    async def get_product_info(self, product_link: str) -> list[Product] | None:
+    async def get_product_info(self, product_link: str) -> list[Product]:
         soup = await self.get_soup(product_link)
         name = soup.find("h1").string
 
@@ -90,7 +90,8 @@ class Site(Parcer):
                 pass
 
         if newprice != newprice2 or oldprice != oldprice2:
-            constants.send_message(f"Не равны цены извлечённые разными способами {__file__}\n")
+            send_service_tg_message(f"Не равны цены извлечённые разными способами {__file__}\n")
+            exit(1)
 
         art = soup.find("li", string=re.compile(translate('kod')))
         art = str(art.string).replace(translate('kod'), '').strip()

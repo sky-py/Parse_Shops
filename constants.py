@@ -1,4 +1,4 @@
-supl_path = 'c:/Quad Solutions/files/2_ price'
+output_path = 'c:/Quad Solutions/files/2_ price'
 
 
 

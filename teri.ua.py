@@ -1,17 +1,17 @@
 import re
-from parcer import Parcer, Product
+from parser import Parser, Product
 
 
-class Site(Parcer):
+class Site(Parser):
     price_file = 'teri.ua.xlsx'
     site = 'https://teri.ua/'
     use_discount = False
 
-    proxy_host = '5.44.252.176'  # "your_proxy_host"
-    proxy_port_http = 28000
-    proxy_port_https = 28800
-    # proxy_username = 'proxy'
-    # proxy_password = 'FoxyProxy'
+    # proxy_host = 'proxy_host.com'  # "your_proxy_host"
+    # proxy_port_http = 28000
+    # proxy_port_https = 28800
+    # proxy_username = '1'
+    # proxy_password = '2'
 
     async def get_categories_links(self, link: str) -> list[str]:
         soup = await self.get_soup(link)
@@ -27,7 +27,7 @@ class Site(Parcer):
         except:
             return []
 
-    async def get_product_info(self, product_link: str) -> list[Product] | None:
+    async def get_product_info(self, product_link: str) -> list[Product]:
         old_price = None
         soup = await self.get_soup(product_link)
 
