@@ -194,8 +194,8 @@ class Parser(ABC):
         } if self.proxy_host else None
 
 
-    def _setup_httpx_client(self):
-        self.client = AsyncClient(follow_redirects=True,
+    def _get_httpx_client(self):
+        return AsyncClient(follow_redirects=True,
                                   proxies=self.proxies,
                                   auth=self.auth,
                                   headers=self.headers,
@@ -224,13 +224,13 @@ class Parser(ABC):
 
     async def get_html_page(self, url: str):
         """Fetches the HTML content of a page asynchronously."""
-        if self.client is None:
-            self._setup_httpx_client()
-        r = await self.client.get(url=url)
-
-        if not self.use_connection_pool:
-            await self.client.aclose()
-            self.client = None
+        if self.use_connection_pool:
+            if self.client is None:
+                self.client = self._get_httpx_client()
+            r = await self.client.get(url=url)
+        else:   # new client for every request
+            async with self._get_httpx_client() as temp_client:
+                r = await temp_client.get(url=url)
         return r.text
 
     async def get_javascript_page(self, url: str) -> str:
