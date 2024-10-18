@@ -21,7 +21,7 @@ class Site(Parser):
     ]
 
     def get_price(self, price_str: str) -> int:
-        return round(super().get_price(price_str) * 1.25)
+        return round(super().get_price(price_str) * 1.27)
 
     async def get_categories_links(self, link: str) -> list[str]:
         return self.categories_to_get
