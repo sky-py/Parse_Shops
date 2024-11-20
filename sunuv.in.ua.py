@@ -13,8 +13,7 @@ class Site(Parser):
 
     async def get_categories_links(self, link: str) -> list[str]:
         soup = await self.get_soup(link)
-        links = [a['href'] for a in soup.find(id="menu-osnovnoe").find_all('a') if
-                     'https://sunuv.in.ua/uk/' not in a['href']]
+        links = [li.find('a')['href'] for li in soup.select('li.product-category')]
         return links
 
     async def get_products_links(self, category_link: str) -> list[str]:
