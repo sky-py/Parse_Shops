@@ -5,7 +5,7 @@ from parser import Parser, Product
 class Site(Parser):
     price_file = 'teri.ua.xlsx'
     site = 'https://teri.ua/'
-    use_discount = False
+    use_discount = True
 
     # proxy_host = 'proxy_host.com'  # "your_proxy_host"
     # proxy_port_http = 28000

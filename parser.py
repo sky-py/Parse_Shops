@@ -238,7 +238,7 @@ class Parser(ABC):
             await self._init_playwright()
         page = await self.context.new_page()
         try:
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url)
             return await page.content()
         finally:
             await page.close()
