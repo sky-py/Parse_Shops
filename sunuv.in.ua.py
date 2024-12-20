@@ -1,6 +1,11 @@
 from parser import Parser, Product
 import json
+import datetime
 
+
+def price_date_valid(date_str: str):
+    date = datetime.datetime.strptime(date_str, '%Y-%m-%d')
+    return datetime.datetime.now() < date
 
 class Site(Parser):
     price_file = 'sunuv.in.ua.xlsx'
@@ -40,11 +45,18 @@ class Site(Parser):
                                             variant=variant)
                                     )
         elif products_json := soup.find('script', class_="", attrs={'type': 'application/ld+json'}):
+            price, old_price = 0, None
             product = json.loads(products_json.text)['@graph'][1]
+            prices = [int(item['price']) for item in product['offers'][0]['priceSpecification'] if price_date_valid(item['validThrough'])]
+            if len(prices) > 1:
+                price = min(*prices)
+                old_price = max(*prices)
+            elif len(prices) == 1:
+                price = prices[0]
             all_products.append(Product(name=name,
                                         art=product['sku'],
-                                        price=self.get_price(product['offers'][0]['price']),
-                                        old_price=None,
+                                        price=self.get_price(price),
+                                        old_price=self.get_price(old_price) if old_price else None,
                                         available='+' if 'InStock'.lower() in product['offers'][0][
                                             'availability'].lower() else '-',
                                         link=product_link,
