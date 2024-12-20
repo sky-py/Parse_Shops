@@ -39,7 +39,7 @@ class Site(Parser):
                 all_products.append(Product(name=f'{name} - {variant}',
                                             art=product['sku'],
                                             price=self.get_price(product['display_price']),
-                                            old_price=None,
+                                            old_price=self.get_price(product['display_regular_price']),
                                             available='+' if product['is_in_stock'] else '-',
                                             link=product_link,
                                             variant=variant)
