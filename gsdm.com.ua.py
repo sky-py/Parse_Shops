@@ -14,6 +14,9 @@ class Site(Parser):
         'email': os.getenv('gsdm_login'),
         'password': os.getenv('gsdm_password')
     }
+    categories_to_get = [
+        'stilci',
+    ]
 
     async def login(self, login_data: dict) -> bool:
         await self.get_soup(self.site)
@@ -26,9 +29,7 @@ class Site(Parser):
     async def get_categories_links(self, link: str) -> list[str]:
         if not await self.login(self.login_data):
             raise Exception('Login failed')
-        categories_links = ['stilci/']
-        return [self.site + category_link for category_link in categories_links]
-
+        return [link + category for category in self.categories_to_get]
 
     async def get_products_links(self, category_link: str) -> list[str]:
         products_links = []

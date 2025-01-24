@@ -7,6 +7,7 @@ def price_date_valid(date_str: str):
     date = datetime.datetime.strptime(date_str, '%Y-%m-%d')
     return datetime.datetime.now() < date
 
+
 class Site(Parser):
     price_file = 'sunuv.in.ua.xlsx'
     site = 'https://sunuv.in.ua/'

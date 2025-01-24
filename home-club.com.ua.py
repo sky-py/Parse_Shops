@@ -12,19 +12,19 @@ class Site(Parser):
     render_javascript = True
     headless = False  # clouflare protection
     categories_to_get = [
-        'https://home-club.com.ua/ua/kukhonni-ostrivtsi-ta-vizky',
-        'https://home-club.com.ua/ua/moduli-na-kolesakh-dlia-vannoi',
-        'https://home-club.com.ua/ua/nastilni-lampy',
-        'https://home-club.com.ua/ua/svitlodiodne-osvitlennia',
-        'https://home-club.com.ua/ua/robochi-lampy',
-        'https://home-club.com.ua/ua/perenosni-svitylnyky',
+        '/kukhonni-ostrivtsi-ta-vizky',
+        '/moduli-na-kolesakh-dlia-vannoi',
+        '/nastilni-lampy',
+        '/svitlodiodne-osvitlennia',
+        '/robochi-lampy',
+        '/perenosni-svitylnyky',
     ]
 
     def get_price(self, price_str: str) -> int:
         return round(super().get_price(price_str) * 1.27)
 
     async def get_categories_links(self, link: str) -> list[str]:
-        return self.categories_to_get
+        return [link + category for category in self.categories_to_get]
 
     async def get_products_links(self, category_link: str) -> list[str]:
         products_links = []
