@@ -20,5 +20,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SERVER_PORT }}
-          script: |
-           cd /Scripts/Parser & git fetch --all & git reset --hard origin/master
+          script: >
+           cmd /c "cd /Scripts/Parser &&
+           git fetch --all &&
+           git reset --hard origin/master"

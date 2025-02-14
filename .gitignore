@@ -3,6 +3,7 @@ Backup/
 backup/
 Log/
 log/
+.lh/
 
 
 # Byte-compiled / optimized / DLL files
