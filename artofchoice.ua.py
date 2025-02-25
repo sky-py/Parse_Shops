@@ -6,7 +6,7 @@ def get_our_price(price: int) -> int:
 
 
 class Site(Parser):
-    price_file = 'artofchoice.xlsx'
+    price_file = 'Art_of_Choice.xlsx'
     site = 'https://artofchoice.ua/ru/catalog/'
     number_of_workers = 1
     compared_product_field = 'name'
