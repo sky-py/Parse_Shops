@@ -1,3 +1,4 @@
+import re
 from parser import Parser, Product
 import json
 import datetime
@@ -47,7 +48,10 @@ class Site(Parser):
                                     )
         elif products_json := soup.find('script', class_="", attrs={'type': 'application/ld+json'}):
             price, old_price = 0, None
-            product = json.loads(products_json.text)['@graph'][1]
+            product_dict = json.loads(products_json.text)
+            if not product_dict.get('@graph'):
+                return []
+            product = product_dict['@graph'][1]
             prices = [int(item['price']) for item in product['offers'][0]['priceSpecification'] if price_date_valid(item['validThrough'])]
             if len(prices) > 1:
                 price = min(*prices)
