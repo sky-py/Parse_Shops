@@ -1,4 +1,3 @@
-import re
 from parser import Parser, Product
 import json
 import datetime
