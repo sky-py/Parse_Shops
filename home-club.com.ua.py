@@ -50,13 +50,14 @@ class Site(Parser):
         art = product.find('div', class_='sku').find(tag_has_sku).text
 
         available = '-'
-        available_tag = product.find(string=lambda text: 'Наявність у Львові:' in text).next_element
+        available_tag = product.find(string=lambda text: 'Наявність на складі у Львові:' in text).next_element
         if 'В наявності' in available_tag.text or re.findall('[1-9]', available_tag.text):
             available = '+'
         else:
-            available_tag = product.find(string=lambda text: 'Наявність для поставки:' in text).next_element
-            if 'В наявності' in available_tag.text or re.findall('[1-9]', available_tag.text):
-                available = 'под заказ'
+            if pre_available_tag := product.find(string=lambda text: 'Наявність для поставки:' in text):
+                available_tag = pre_available_tag.next_element
+                if 'В наявності' in available_tag.text or re.findall('[1-9]', available_tag.text):
+                    available = 'под заказ'
 
         price = self.get_price(product.find('div', class_='product-price').text)
         if old_price := product.find('div', class_='old-product-price'):
