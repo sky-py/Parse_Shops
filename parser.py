@@ -136,7 +136,8 @@ class Parser(ABC):
     @abstractmethod
     async def get_product_info(self, product_link: str) -> list[Product]:
         """
-        This method should be implemented in subclasses to parse product details from a product page and return a list of Product dictionaries.
+        This method should be implemented in subclasses to parse product details from a product page and return a list
+        of Product dictionaries.
         """
         pass
 
@@ -193,10 +194,9 @@ class Parser(ABC):
             'password': self.proxy_password
         } if self.proxy_host else None
 
-
-    def _get_httpx_client(self):
+    def _get_httpx_client(self) -> AsyncClient:
         return AsyncClient(follow_redirects=True,
-                                  proxies=self.proxies,
+                                  proxy=self.proxies,
                                   auth=self.auth,
                                   headers=self.headers,
                                   timeout=30)
@@ -299,7 +299,8 @@ class Parser(ABC):
 
     def _process_unavailable(self):
         """
-        Handles delayed availability logic, incrementing unavailable counts and marking products as unavailable after exceeding the threshold.
+        Handles delayed availability logic, incrementing unavailable counts and marking products as unavailable after
+        exceeding the threshold.
         """
         for i in range(2, self.sh.max_row + 1):
             if not self.sh.cell(i, self.present_at_site_clmn).value:
@@ -320,7 +321,8 @@ class Parser(ABC):
 
     async def worker(self, worker_id: int):
         """
-        Worker function that processes product links from the queue, fetches product information, and writes it to the Excel sheet.
+        Worker function that processes product links from the queue, fetches product information, and writes it
+        to the Excel sheet.
         """
         color = get_color(worker_id)
         logger.info(f'Worker {worker_id} - Starting parsing links of {self.site}')
@@ -370,7 +372,7 @@ class Parser(ABC):
         t0 = time.time()
         asyncio.run(self.main())
         t1 = time.time()
-        logger.info(f'End parsing links of {self.site} Parsing Time = {t1-t0:.02f} sec')
+        logger.info(f'End parsing links of {self.site} Parsing Time = {t1 - t0:.02f} sec')
 
         if self.use_dalayed_availability:
             self._process_unavailable()
