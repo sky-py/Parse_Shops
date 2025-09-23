@@ -49,11 +49,15 @@ class Site(Parser):
             products_links.append('https:' + product_item.find("div", {"class": "name"}).a['href'])
         return products_links
 
+    @staticmethod
+    def product_has_discount(name: str) -> bool:
+        return translate('discount').lower() in name.lower() or translate('discount_2').lower() in name.lower()
+
     async def get_product_info(self, product_link: str) -> list[Product]:
         art = None
         soup = await self.get_soup(product_link)
         name = soup.find("h1", {"itemprop": "name"}).string
-        if translate('discount').lower() in name.lower() or translate('discount_2').lower() in name.lower():
+        if Site.product_has_discount(name):
             return []
         if art_tag := soup.find("meta", {"itemprop": "sku"}):
             art = art_tag['content']
