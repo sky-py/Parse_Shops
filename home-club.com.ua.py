@@ -14,16 +14,21 @@ class Site(Parser):
     categories_to_get = [
         '/kukhonni-ostrivtsi-ta-vizky',
         '/moduli-na-kolesakh-dlia-vannoi',
+        '/lampy',
         '/nastilni-lampy',
-        '/svitlodiodne-osvitlennia',
         '/robochi-lampy',
-        '/perenosni-svitylnyky',
+        # '/svitlodiodne-osvitlennia',
+        # '/perenosni-svitylnyky',
     ]
 
     def get_price(self, price_str: str) -> int:
         return round(super().get_price(price_str) * 1.27)
 
     async def get_categories_links(self, link: str) -> list[str]:
+        for category in self.categories_to_get:
+            soup = await self.get_soup(link + category)
+            if soup.find('div', class_='four-ou-four'):
+                raise Exception(f'Category {link + category} not found')
         return [link + category for category in self.categories_to_get]
 
     async def get_products_links(self, category_link: str) -> list[str]:
@@ -42,6 +47,9 @@ class Site(Parser):
     async def get_product_info(self, product_link: str) -> list[Product]:
         all_products = []
         soup = await self.get_soup(product_link)
+        
+        if soup.find('div', class_='four-ou-four'):
+            raise Exception(f'Product {product_link} not found')
 
         product = soup.find('div', class_='product-essential')
 
