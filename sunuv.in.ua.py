@@ -19,8 +19,8 @@ class Site(Parser):
 
     async def get_categories_links(self, link: str) -> list[str]:
         soup = await self.get_soup(link)
-        links = [li.find('a')['href'] for li in soup.select('li.product-category')]
-        return links
+        links = {li.find('a')['href'] for li in soup.select('li.menu-item-object-product_cat')}
+        return list(links)
 
     async def get_products_links(self, category_link: str) -> list[str]:
         soup = await self.get_soup(category_link + self.max_products_per_page)
