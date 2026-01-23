@@ -351,9 +351,9 @@ class Parser(ABC):
         workers_tasks = [asyncio.create_task(self.worker(i)) for i in range(self.number_of_workers)]
 
         if not await get_products_links_task:
-            logger.error(f'Error parcing {self.site} Unable to get any product links')
             for task in workers_tasks:
                 task.cancel()
+            raise Exception(f'Error parcing {self.site} Unable to get any product links')
         else:
             await self.queue.join()
 

@@ -29,6 +29,10 @@ class Site(Parser):
     excluded_links = ['#', '/promotion/']
     use_discount = False
 
+    render_javascript = False
+    number_of_workers = 1
+    worker_timeout = 2
+
     art_clmn = 1
     name_clmn = 2
     price_clmn = 3

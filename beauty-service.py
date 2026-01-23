@@ -43,6 +43,7 @@ class Site(Parser):
         return categories_links
 
     async def get_products_links(self, category_link: str) -> list[str]:
+        ww = 'https://kosmetologia.com.ua/ua/https%3A%2F%2Fkosmetologia.com.ua%2Fua%2Fkr%25d1%2596slo-dlya-kocmetolog%25d1%2596chnih-procedur--mod-yy-601-75--%D1%81hoco'
         products_links = []
         soup = await self.get_soup(category_link + self.max_products_per_page)
         for product_item in soup.find_all("div", {"class": "product-item"}):
@@ -56,6 +57,8 @@ class Site(Parser):
     async def get_product_info(self, product_link: str) -> list[Product]:
         art = None
         soup = await self.get_soup(product_link)
+        if soup.find('span', class_='error_code', string='404'):  # page not found
+            return []
         name = soup.find("h1", {"itemprop": "name"}).string
         if Site.product_has_discount(name):
             return []
