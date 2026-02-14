@@ -362,19 +362,22 @@ class Parser(ABC):
         elif self.use_connection_pool:
             await self.client.aclose()
 
-    @logger.catch
-    def parse(self):
+    def parse(self) -> None:
         """
         Starts the parsing process, measures execution time, and saves the results to the Excel file.
         """
-        colorama.init()
-        logger.info(f'Starting getting links for parsing for {self.site}')
-        t0 = time.time()
-        asyncio.run(self.main())
-        t1 = time.time()
-        logger.info(f'End parsing links of {self.site} Parsing Time = {t1 - t0:.02f} sec')
+        try:
+            colorama.init()
+            logger.info(f'Starting getting links for parsing for {self.site}')
+            t0 = time.time()
+            asyncio.run(self.main())
+            t1 = time.time()
+            logger.info(f'End parsing links of {self.site} Parsing Time = {t1 - t0:.02f} sec')
 
-        if self.use_dalayed_availability:
-            self._process_unavailable()
+            if self.use_dalayed_availability:
+                self._process_unavailable()
 
-        self.wb.save(self.price_file_absolute)
+            self.wb.save(self.price_file_absolute)
+
+        except Exception as e:
+            logger.error(f'Error parsing {self.site} {str(e)}')
