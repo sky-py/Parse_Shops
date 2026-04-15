@@ -1,26 +1,25 @@
+import asyncio
+import os
+import platform
+import re
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import StrEnum
-
-from httpx import AsyncClient, BasicAuth
-from playwright.async_api import async_playwright
-from bs4 import BeautifulSoup
-from openpyxl import Workbook
-from openpyxl.worksheet.worksheet import Worksheet
 from pathlib import Path
 from typing import Optional
-
-import xls_functions
-import asyncio
-import time
-import constants
-import platform
+from urllib.parse import quote
 import colorama
-import re
-import os
+import constants
+import xls_functions
+from bs4 import BeautifulSoup
+from httpx import AsyncClient
 from loguru import logger
-from retry import retry
 from messengers import send_service_tg_message
+from openpyxl import Workbook
+from openpyxl.worksheet.worksheet import Worksheet
+from playwright.async_api import async_playwright
+from retry import retry
 
 
 def set_work_dir():
@@ -41,6 +40,7 @@ class ComparisonField(StrEnum):
 @dataclass
 class Product:
     """Defines the structure of a product dictionary."""
+
     name: Optional[str]
     art: Optional[str]
     available: str
@@ -62,7 +62,7 @@ class Parser(ABC):
 
     site = 'https://example.com'  # URL of the website to parse. To be overridden in subclasses
     price_file = 'example.xlsx'  # Name of the Excel file to store the results. To be overridden in subclasses
-    output_path = constants.output_path  # Path to the directory where the Excel file will be saved
+    output_path = constants.OUTPUT_PATH  # Path to the directory where the Excel file will be saved
     use_discount = True  # Whether to consider supplier's discount in calculations
     max_products_per_page = ''  # String to append to category URLs to maximize product output
 
@@ -77,11 +77,11 @@ class Parser(ABC):
         'Accept-Language': 'uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7,ru;q=0.6',
     }
 
-    proxy_host: str = ''  # "your_proxy_host"
-    proxy_port_http: int
-    proxy_port_https: int
+    proxy_host: str = ''
+    proxy_port: int = 0
+    proxy_scheme: str = 'http'
     proxy_username: str = ''
-    proxy_password: str
+    proxy_password: str = ''
 
     # Column numbers for storing data in the Excel file
     art_clmn = 1
@@ -144,26 +144,31 @@ class Parser(ABC):
     def _init_loggers(self) -> None:
         """Initializes loggers for debug and info messages."""
         name = Path(self.price_file).stem
-        logger.add(sink=f'./log/{name}_debug.log',
-                   format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-                   level='DEBUG',
-                   rotation='5 days',
-                   retention='10 days',
-                   )
-        logger.add(sink=f'./log/{name}.log',
-                   format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-                   level='INFO',
-                   backtrace=True,
-                   diagnose=True)
-        logger.add(sink=lambda msg: send_service_tg_message(msg),
-                   format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-                   level='ERROR',
-                   backtrace=True,
-                   diagnose=True)
+        logger.add(
+            sink=f'./log/{name}_debug.log',
+            format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+            level='DEBUG',
+            rotation='5 days',
+            retention='10 days',
+        )
+        logger.add(
+            sink=f'./log/{name}.log',
+            format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+            level='INFO',
+            backtrace=True,
+            diagnose=True,
+        )
+        logger.add(
+            sink=lambda msg: send_service_tg_message(msg),
+            format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+            level='ERROR',
+            backtrace=True,
+            diagnose=True,
+        )
 
     def _init_workbook(self) -> None:
-        Path(constants.output_path).mkdir(parents=True, exist_ok=True)
-        self.price_file_absolute = Path(constants.output_path) / self.price_file
+        Path(constants.OUTPUT_PATH).mkdir(parents=True, exist_ok=True)
+        self.price_file_absolute = Path(constants.OUTPUT_PATH) / self.price_file
 
         if self.use_dalayed_availability:
             self.wb: Workbook = xls_functions.init(self.price_file_absolute, create_on_error=True)
@@ -181,34 +186,33 @@ class Parser(ABC):
         self.index = xls_functions.index_file(self.sh, self.compare_by_column_number)
 
     def _setup_proxies(self):
-        self.proxies = None
-        self.auth = None
-        if self.proxy_host:
-            self.proxies = {'http://': f'http://{self.proxy_host}:{self.proxy_port_http}',
-                            'https://': f'http://{self.proxy_host}:{self.proxy_port_https}'}
-            self.auth = BasicAuth(self.proxy_username, self.proxy_password) if self.proxy_username else None
+        self.proxy_url = None
+        self.playwright_proxy = None
 
-        self.playwright_proxy = {
-            'server': f'https://{self.proxy_host}:{self.proxy_port_https}',
-            'username': self.proxy_username,
-            'password': self.proxy_password
-        } if self.proxy_host else None
+        if self.proxy_host:
+            self.proxy_url = self._build_proxy_url()
+            self.playwright_proxy = {'server': self.proxy_url}
+            if self.proxy_username:
+                self.playwright_proxy['username'] = self.proxy_username
+                self.playwright_proxy['password'] = self.proxy_password
+
+    def _build_proxy_url(self) -> str:
+        credentials = ''
+        if self.proxy_username:
+            credentials = f'{quote(self.proxy_username, safe="")}:{quote(self.proxy_password, safe="")}@'
+        return f'{self.proxy_scheme}://{credentials}{self.proxy_host}:{self.proxy_port}'
 
     def _get_httpx_client(self) -> AsyncClient:
-        return AsyncClient(follow_redirects=True,
-                                  proxy=self.proxies,
-                                  auth=self.auth,
-                                  headers=self.headers,
-                                  timeout=30)
+        return AsyncClient(follow_redirects=True, proxy=self.proxy_url, headers=self.headers, timeout=30)
 
     async def _init_playwright(self):
         """Initializes the Playwright library and creates a new browser context.
         for javascript rendering"""
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=self.headless)
-        self.context = await self.browser.new_context(user_agent=self.user_agent,
-                                                      extra_http_headers=self.extra_http_headers,
-                                                      proxy=self.playwright_proxy)
+        self.browser = await self.playwright.chromium.launch(headless=self.headless, proxy=self.playwright_proxy)
+        self.context = await self.browser.new_context(
+            user_agent=self.user_agent, extra_http_headers=self.extra_http_headers
+        )
         page = await self.context.new_page()
         await page.goto('about:blank')
 
@@ -228,7 +232,7 @@ class Parser(ABC):
             if self.client is None:
                 self.client = self._get_httpx_client()
             r = await self.client.get(url=url)
-        else:   # new client for every request
+        else:  # new client for every request
             async with self._get_httpx_client() as temp_client:
                 r = await temp_client.get(url=url)
         return r.text
@@ -269,7 +273,9 @@ class Parser(ABC):
 
     def _is_valid_category_link(self, link: str) -> bool:
         """Checks if the given link should be excluded based on configured URL fragments."""
-        return link not in self.excluded_links and not any(part in link for part in self.excluded_categories_links_parts)
+        return link not in self.excluded_links and not any(
+            part in link for part in self.excluded_categories_links_parts
+        )
 
     def get_price(self, price_str: str) -> int:
         """Extracts the integer price from a string, handling commas and decimal points."""
@@ -334,7 +340,7 @@ class Parser(ABC):
                 if not products:
                     logger.debug(f'***********  NO PRODUCTS FOUND ON THE PAGE  *********** {product_link}')
             except Exception as e:
-                logger.error(f"ERROR {str(e)} parsing product {product_link} for {self.worker_attempts} attempts")
+                logger.error(f'ERROR {str(e)} parsing product {product_link} for {self.worker_attempts} attempts')
             else:
                 for product in products:
                     logger.debug(color + f'Worker {worker_id} ---- Writing {product}\n')

@@ -1,4 +1,5 @@
 import re
+from constants import PROXY_HOST, PROXY_PASSWORD, PROXY_PORT, PROXY_USERNAME
 from parser import Parser, Product
 
 
@@ -7,11 +8,10 @@ class Site(Parser):
     site = 'https://teri.ua/'
     use_discount = True
 
-    # proxy_host = 'proxy_host.com'  # "your_proxy_host"
-    # proxy_port_http = 28000
-    # proxy_port_https = 28800
-    # proxy_username = '1'
-    # proxy_password = '2'
+    proxy_host: str = PROXY_HOST
+    proxy_port: int = PROXY_PORT
+    proxy_username: str = PROXY_USERNAME
+    proxy_password: str = PROXY_PASSWORD
 
     async def get_categories_links(self, link: str) -> list[str]:
         soup = await self.get_soup(link)
@@ -50,13 +50,11 @@ class Site(Parser):
         except:
             pass
 
-        return [Product(name=name,
-                        art=art,
-                        price=price,
-                        available='+',
-                        old_price=old_price,
-                        link=product_link,
-                        variant=None)]
+        return [
+            Product(
+                name=name, art=art, price=price, available='+', old_price=old_price, link=product_link, variant=None
+            )
+        ]
 
 
 Site().parse()
