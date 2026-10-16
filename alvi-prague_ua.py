@@ -35,6 +35,9 @@ def translate(element):
 #         <p class="product-hero__price">999 999 грн</p>
 #         <p class="product-hero__price product-hero__price--old"><s>1 104 299 грн</s></p>
 #
+# Products that can't be bought (since 2026-10-16): no price-wrap and no sticky bar at all, the price is only in
+# JSON-LD with "availability": "https://schema.org/OutOfStock" (or no offers at all -> price 0, as before).
+#
 # Anything else raises PriceMarkupChanged: the parser must be revised by hand.
 # ---------------------------------------------------------------------------------------------------------------------
 
@@ -51,6 +54,12 @@ KNOWN_HERO_PRICE_CLASSES = {
     'product-hero__price--old',
 }
 KNOWN_OFFER_KEYS = {'@type', 'url', 'priceCurrency', 'price', 'availability', 'itemCondition', 'seller'}
+IN_STOCK_TEXTS = {lang['ua']['in_stock'], lang['ru']['in_stock']}
+NOT_FOR_SALE_AVAILABILITY = {
+    'https://schema.org/OutOfStock',
+    'https://schema.org/Discontinued',
+    'https://schema.org/SoldOut',
+}
 
 
 class PriceMarkupChanged(Exception):
@@ -116,6 +125,8 @@ def check_price_markup(soup: BeautifulSoup, ld_product: dict) -> tuple[int, Opti
     # 1. Price block: exactly one wrap containing exactly one prices block and nothing else
     wraps = hero.find_all(class_='product-hero__price-wrap')
     blocks = hero.find_all(class_='product-hero__prices')
+    if not wraps and not blocks:
+        return check_hidden_price(soup, hero, ld_product)
     if len(wraps) != 1 or len(blocks) != 1 or element_children(wraps[0]) != [blocks[0]]:
         raise PriceMarkupChanged(f'Price block structure changed: {str(wraps[0] if wraps else hero)[:500]}')
 
@@ -138,14 +149,8 @@ def check_price_markup(soup: BeautifulSoup, ld_product: dict) -> tuple[int, Opti
     if oldprice is not None and oldprice <= newprice:
         raise PriceMarkupChanged(f'Old price {oldprice} is not greater than price {newprice}')
 
-    # 3. Discount signs elsewhere in the product hero: strikethrough or price/sale/discount classes we don't know
-    for tag in hero.find_all(True):
-        if tag.name in ('s', 'del', 'strike') and blocks[0] not in tag.parents:
-            raise PriceMarkupChanged(f'Strikethrough outside price block: {str(tag)[:300]}')
-        if unknown := [
-            c for c in tag.get('class', []) if PRICE_HINT_RE.search(c) and c not in KNOWN_HERO_PRICE_CLASSES
-        ]:
-            raise PriceMarkupChanged(f'Unknown price-like classes {unknown}: {str(tag)[:300]}')
+    # 3. Discount signs elsewhere in the product hero
+    check_no_discount_signs(hero, blocks[0])
 
     # 4. Sticky buy bar repeats the current price (no bar for products that can't be bought)
     sticky = soup.find_all(class_='sticky-buy-bar__price')
@@ -157,14 +162,57 @@ def check_price_markup(soup: BeautifulSoup, ld_product: dict) -> tuple[int, Opti
         if newprice != 0 or oldprice is not None:
             raise PriceMarkupChanged(f'JSON-LD has no offers, but page price is {newprice} / old {oldprice}')
         return newprice, oldprice
-    try:
-        ld_price = Decimal(ld_product['offers']['price'])
-    except InvalidOperation:
-        raise PriceMarkupChanged(f'JSON-LD price is not a number: {ld_product["offers"]["price"]!r}')
+    ld_price = get_ld_price(ld_product)
     if ld_price != newprice:
         raise PriceMarkupChanged(f'JSON-LD price {ld_price} differs from page price {newprice}')
 
     return newprice, oldprice
+
+
+def check_hidden_price(soup: BeautifulSoup, hero: Tag, ld_product: dict) -> tuple[int, None]:
+    """No price block on the page: allowed only for products that can't be bought, price is taken from JSON-LD."""
+    stock = hero.find(class_='product-hero__stock')
+    stock_text = stock.get_text(strip=True) if stock else None
+    if stock_text is None or stock_text in IN_STOCK_TEXTS:
+        raise PriceMarkupChanged(f'No price block on the page, stock: {stock_text!r}')
+    if soup.find(class_='sticky-buy-bar__price'):
+        raise PriceMarkupChanged('No price block on the page, but sticky bar has a price')
+    check_no_discount_signs(hero, None)
+
+    offers = ld_product.get('offers')
+    if offers is None:  # products without any price, written with 0 as before
+        return 0, None
+    if offers.get('availability') not in NOT_FOR_SALE_AVAILABILITY:
+        raise PriceMarkupChanged(
+            f'No price block on the page, but JSON-LD availability is {offers.get("availability")!r}'
+        )
+    return get_ld_price(ld_product), None
+
+
+def check_no_discount_signs(hero: Tag, price_block: Optional[Tag]) -> None:
+    """Raises on strikethrough, price/sale/discount classes or our known price classes outside the price block."""
+    allowed = set() if price_block is None else {id(price_block), id(price_block.parent)}
+    if price_block is not None:
+        allowed |= {id(t) for t in price_block.find_all(True)}
+    for tag in hero.find_all(True):
+        if tag.name in ('s', 'del', 'strike') and id(tag) not in allowed:
+            raise PriceMarkupChanged(f'Strikethrough outside price block: {str(tag)[:300]}')
+        if id(tag) not in allowed and set(tag.get('class', [])) & KNOWN_HERO_PRICE_CLASSES:
+            raise PriceMarkupChanged(f'Price element outside price block: {str(tag)[:300]}')
+        if unknown := [
+            c for c in tag.get('class', []) if PRICE_HINT_RE.search(c) and c not in KNOWN_HERO_PRICE_CLASSES
+        ]:
+            raise PriceMarkupChanged(f'Unknown price-like classes {unknown}: {str(tag)[:300]}')
+
+
+def get_ld_price(ld_product: dict) -> int:
+    try:
+        ld_price = Decimal(ld_product['offers']['price'])
+    except InvalidOperation:
+        raise PriceMarkupChanged(f'JSON-LD price is not a number: {ld_product["offers"]["price"]!r}')
+    if ld_price != int(ld_price):
+        raise PriceMarkupChanged(f'JSON-LD price has kopecks: {ld_price}')
+    return int(ld_price)
 
 
 class Site(Parser):
