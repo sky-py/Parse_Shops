@@ -31,9 +31,13 @@ def translate(element):
 #   <span class="sticky-buy-bar__price">1 104 299 грн</span>
 #   <script type="application/ld+json">{"@type":"Product", "model": ..., "offers":{"@type":"Offer","price":"1104299.00",...}}
 #
-# Predicted discount markup (site CSS already has .product-hero__price--old and .product-hero__price--old s):
-#         <p class="product-hero__price">999 999 грн</p>
-#         <p class="product-hero__price product-hero__price--old"><s>1 104 299 грн</s></p>
+# Discount markup (seen 2026-10-26, HALLOWEEN promotion), sticky bar and JSON-LD hold the special price:
+#       <div class="product-hero__prices">
+#         <p class="product-hero__price product-hero__price--special">5 485 500 грн</p>
+#         <p class="product-hero__price product-hero__price--old"><s>6 095 000 грн</s></p>
+#       </div>
+#     </div>
+#     <div class="promotion-countdown promotion-countdown--product" ...> ... (timer and sticker, no prices) </div>
 #
 # Products that can't be bought (since 2026-10-16): no price-wrap and no sticky bar at all, the price is only in
 # JSON-LD with "availability": "https://schema.org/OutOfStock" (or no offers at all -> price 0, as before).
@@ -45,14 +49,18 @@ PRICE_RE = re.compile(r'\d{1,3}(?: \d{3})* грн')
 LD_PRICE_RE = re.compile(r'\d+(?:\.\d{1,2})?')
 PRICE_HINT_RE = re.compile(r'price|discount|sale|special|promo|percent|(?<![a-z])old', re.I)
 
-NEW_PRICE_CLASSES = {'product-hero__price'}
-OLD_PRICE_CLASSES = [{'product-hero__price', 'product-hero__price--old'}, {'product-hero__price--old'}]
+REGULAR_PRICE_CLASSES = {'product-hero__price'}
+SPECIAL_PRICE_CLASSES = {'product-hero__price', 'product-hero__price--special'}
+OLD_PRICE_CLASSES = {'product-hero__price', 'product-hero__price--old'}
 KNOWN_HERO_PRICE_CLASSES = {
     'product-hero__price-wrap',
     'product-hero__prices',
     'product-hero__price',
+    'product-hero__price--special',
     'product-hero__price--old',
 }
+# Promotion timer and sticker next to the discounted price
+PROMOTION_CLASS_RE = re.compile(r'promotion-(?:countdown|sticker)(?:__[a-z]+)?(?:--[a-z]+)?')
 KNOWN_OFFER_KEYS = {'@type', 'url', 'priceCurrency', 'price', 'availability', 'itemCondition', 'seller'}
 IN_STOCK_TEXTS = {lang['ua']['in_stock'], lang['ru']['in_stock']}
 NOT_FOR_SALE_AVAILABILITY = {
@@ -130,27 +138,34 @@ def check_price_markup(soup: BeautifulSoup, ld_product: dict) -> tuple[int, Opti
     if len(wraps) != 1 or len(blocks) != 1 or element_children(wraps[0]) != [blocks[0]]:
         raise PriceMarkupChanged(f'Price block structure changed: {str(wraps[0] if wraps else hero)[:500]}')
 
-    # 2. Inside the prices block: one current price and optionally one old price in the predicted form
-    new_tags, old_tags = [], []
+    # 2. Inside the prices block: a regular price alone, or a discount: special price + old price in <s>
+    price_tags = {}
     for p in element_children(blocks[0]):
         classes = set(p.get('class', []))
         inner_tags = [t.name for t in p.find_all(True)]
-        if p.name == 'p' and classes == NEW_PRICE_CLASSES and not inner_tags:
-            new_tags.append(p)
-        elif p.name == 'p' and classes in OLD_PRICE_CLASSES and inner_tags in ([], ['s'], ['del']):
-            old_tags.append(p)
+        if p.name == 'p' and classes == REGULAR_PRICE_CLASSES and not inner_tags:
+            kind = 'regular'
+        elif p.name == 'p' and classes == SPECIAL_PRICE_CLASSES and not inner_tags:
+            kind = 'special'
+        elif p.name == 'p' and classes == OLD_PRICE_CLASSES and inner_tags == ['s']:
+            kind = 'old'
         else:
             raise PriceMarkupChanged(f'Unknown element in price block: {str(p)[:300]}')
-    if len(new_tags) != 1 or len(old_tags) > 1:
-        raise PriceMarkupChanged(f'Expected 1 price and at most 1 old price, found {len(new_tags)} and {len(old_tags)}')
+        if kind in price_tags:
+            raise PriceMarkupChanged(f'Two {kind} prices in price block: {str(blocks[0])[:300]}')
+        price_tags[kind] = p
 
-    newprice = parse_price_text(new_tags[0])
-    oldprice = parse_price_text(old_tags[0]) if old_tags else None
-    if oldprice is not None and oldprice <= newprice:
-        raise PriceMarkupChanged(f'Old price {oldprice} is not greater than price {newprice}')
+    if set(price_tags) == {'regular'}:
+        newprice, oldprice = parse_price_text(price_tags['regular']), None
+    elif set(price_tags) == {'special', 'old'}:
+        newprice, oldprice = parse_price_text(price_tags['special']), parse_price_text(price_tags['old'])
+        if oldprice <= newprice:
+            raise PriceMarkupChanged(f'Old price {oldprice} is not greater than special price {newprice}')
+    else:
+        raise PriceMarkupChanged(f'Unexpected set of prices {sorted(price_tags)}: {str(blocks[0])[:300]}')
 
     # 3. Discount signs elsewhere in the product hero
-    check_no_discount_signs(hero, blocks[0])
+    check_no_discount_signs(hero, blocks[0], discounted=oldprice is not None)
 
     # 4. Sticky buy bar repeats the current price (no bar for products that can't be bought)
     sticky = soup.find_all(class_='sticky-buy-bar__price')
@@ -177,7 +192,7 @@ def check_hidden_price(soup: BeautifulSoup, hero: Tag, ld_product: dict) -> tupl
         raise PriceMarkupChanged(f'No price block on the page, stock: {stock_text!r}')
     if soup.find(class_='sticky-buy-bar__price'):
         raise PriceMarkupChanged('No price block on the page, but sticky bar has a price')
-    check_no_discount_signs(hero, None)
+    check_no_discount_signs(hero, None, discounted=False)
 
     offers = ld_product.get('offers')
     if offers is None:  # products without any price, written with 0 as before
@@ -189,18 +204,28 @@ def check_hidden_price(soup: BeautifulSoup, hero: Tag, ld_product: dict) -> tupl
     return get_ld_price(ld_product), None
 
 
-def check_no_discount_signs(hero: Tag, price_block: Optional[Tag]) -> None:
-    """Raises on strikethrough, price/sale/discount classes or our known price classes outside the price block."""
+def check_no_discount_signs(hero: Tag, price_block: Optional[Tag], discounted: bool) -> None:
+    """
+    Raises on strikethrough, price/sale/discount classes or our known price classes outside the price block.
+    Promotion timer / sticker is allowed only next to a discounted price and must not contain prices.
+    """
     allowed = set() if price_block is None else {id(price_block), id(price_block.parent)}
     if price_block is not None:
         allowed |= {id(t) for t in price_block.find_all(True)}
     for tag in hero.find_all(True):
+        classes = tag.get('class', [])
         if tag.name in ('s', 'del', 'strike') and id(tag) not in allowed:
             raise PriceMarkupChanged(f'Strikethrough outside price block: {str(tag)[:300]}')
-        if id(tag) not in allowed and set(tag.get('class', [])) & KNOWN_HERO_PRICE_CLASSES:
+        if id(tag) not in allowed and set(classes) & KNOWN_HERO_PRICE_CLASSES:
             raise PriceMarkupChanged(f'Price element outside price block: {str(tag)[:300]}')
+        if any(PROMOTION_CLASS_RE.fullmatch(c) for c in classes):
+            if not discounted:
+                raise PriceMarkupChanged(f'Promotion block without discounted price: {str(tag)[:300]}')
+            if 'грн' in tag.get_text():
+                raise PriceMarkupChanged(f'Price inside promotion block: {str(tag)[:300]}')
         if unknown := [
-            c for c in tag.get('class', []) if PRICE_HINT_RE.search(c) and c not in KNOWN_HERO_PRICE_CLASSES
+            c for c in classes
+            if PRICE_HINT_RE.search(c) and c not in KNOWN_HERO_PRICE_CLASSES and not PROMOTION_CLASS_RE.fullmatch(c)
         ]:
             raise PriceMarkupChanged(f'Unknown price-like classes {unknown}: {str(tag)[:300]}')
 
