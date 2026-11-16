@@ -39,6 +39,13 @@ def translate(element):
 #     </div>
 #     <div class="promotion-countdown promotion-countdown--product" ...> ... (timer and sticker, no prices) </div>
 #
+# Discount markup (seen 2026-11-16, BLACK FRIDAY promotion): wrap gets a modifier and the sticker moves inside it:
+#     <div class="product-hero__price-wrap product-hero__price-wrap--promotion">
+#       <div class="product-hero__prices"> ... special + old, as above ... </div>
+#       <a class="promotion-sticker promotion-sticker--product" href=".../promotion"><img ...></a>
+#     </div>
+#     <div class="promotion-countdown promotion-countdown--product" ...> ... (timer, no prices) </div>
+#
 # Products that can't be bought (since 2026-10-16): no price-wrap and no sticky bar at all, the price is only in
 # JSON-LD with "availability": "https://schema.org/OutOfStock" (or no offers at all -> price 0, as before).
 #
@@ -52,8 +59,12 @@ PRICE_HINT_RE = re.compile(r'price|discount|sale|special|promo|percent|(?<![a-z]
 REGULAR_PRICE_CLASSES = {'product-hero__price'}
 SPECIAL_PRICE_CLASSES = {'product-hero__price', 'product-hero__price--special'}
 OLD_PRICE_CLASSES = {'product-hero__price', 'product-hero__price--old'}
+WRAP_CLASSES = {'product-hero__price-wrap'}
+PROMOTION_WRAP_CLASSES = {'product-hero__price-wrap', 'product-hero__price-wrap--promotion'}
+PROMOTION_STICKER_CLASSES = {'promotion-sticker', 'promotion-sticker--product'}
 KNOWN_HERO_PRICE_CLASSES = {
     'product-hero__price-wrap',
+    'product-hero__price-wrap--promotion',
     'product-hero__prices',
     'product-hero__price',
     'product-hero__price--special',
@@ -130,13 +141,28 @@ def check_price_markup(soup: BeautifulSoup, ld_product: dict) -> tuple[int, Opti
     if hero is None:
         raise PriceMarkupChanged('section.product-hero not found')
 
-    # 1. Price block: exactly one wrap containing exactly one prices block and nothing else
+    # 1. Price block: exactly one wrap containing exactly one prices block,
+    #    promotion wrap may also hold one promotion sticker after it
     wraps = hero.find_all(class_='product-hero__price-wrap')
     blocks = hero.find_all(class_='product-hero__prices')
     if not wraps and not blocks:
         return check_hidden_price(soup, hero, ld_product)
-    if len(wraps) != 1 or len(blocks) != 1 or element_children(wraps[0]) != [blocks[0]]:
+    if len(wraps) != 1 or len(blocks) != 1:
         raise PriceMarkupChanged(f'Price block structure changed: {str(wraps[0] if wraps else hero)[:500]}')
+    wrap_classes = set(wraps[0].get('class', []))
+    wrap_children = element_children(wraps[0])
+    if wrap_classes == WRAP_CLASSES:
+        promotion_wrap = False
+        known_wrap_children = wrap_children == [blocks[0]]
+    elif wrap_classes == PROMOTION_WRAP_CLASSES:
+        promotion_wrap = True
+        known_wrap_children = wrap_children[:1] == [blocks[0]] and len(wrap_children) <= 2 and all(
+            t.name == 'a' and set(t.get('class', [])) == PROMOTION_STICKER_CLASSES for t in wrap_children[1:]
+        )
+    else:
+        known_wrap_children = False
+    if not known_wrap_children:
+        raise PriceMarkupChanged(f'Price block structure changed: {str(wraps[0])[:500]}')
 
     # 2. Inside the prices block: a regular price alone, or a discount: special price + old price in <s>
     price_tags = {}
@@ -163,6 +189,8 @@ def check_price_markup(soup: BeautifulSoup, ld_product: dict) -> tuple[int, Opti
             raise PriceMarkupChanged(f'Old price {oldprice} is not greater than special price {newprice}')
     else:
         raise PriceMarkupChanged(f'Unexpected set of prices {sorted(price_tags)}: {str(blocks[0])[:300]}')
+    if promotion_wrap and oldprice is None:
+        raise PriceMarkupChanged(f'Promotion price wrap without discounted price: {str(wraps[0])[:300]}')
 
     # 3. Discount signs elsewhere in the product hero
     check_no_discount_signs(hero, blocks[0], discounted=oldprice is not None)
