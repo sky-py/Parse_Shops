@@ -10,7 +10,7 @@ class Site(Parser):
     price_file = 'home-club.com.ua.xlsx'
     site = 'https://home-club.com.ua/ua'
     render_javascript = True
-    headless = False  # clouflare protection
+    headless = True  # was False because of Cloudflare; headless verified working 2026-11-20
     categories_to_get = [
         '/kukhonni-ostrivtsi-ta-vizky',
         '/moduli-na-kolesakh-dlia-vannoi',
